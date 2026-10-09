@@ -1,7 +1,10 @@
 name: Experimental iPhone AirPlay receiver for Fire OS 5
 on:
-  workflow_dispatch:
   push:
+    paths:
+      - '.github/workflows/airplay-port.yml'
+  workflow_dispatch:
+  pull_request:
     paths:
       - '.github/workflows/airplay-port.yml'
 jobs:
@@ -10,13 +13,13 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout actual AirPlay receiver source
-        uses: actions/checkout@v4
-        with:
-          repository: prat3ik/iMirror
-          ref: main
-          path: receiver
-          submodules: recursive
+      - name: Diagnostics
+        run: |
+          uname -a
+          df -h
+          git --version
+      - name: Clone public upstream AirPlay receiver
+        run: git clone --depth=1 --recurse-submodules https://github.com/prat3ik/iMirror.git receiver
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -24,23 +27,25 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install native toolchain
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
           sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
-      - name: Attempt Fire OS 5 port
+      - name: Patch Android minimum version
         working-directory: receiver
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          f=Path('app/build.gradle.kts')
-          src=f.read_text()
-          assert 'minSdk = 25' in src
-          f.write_text(src.replace('minSdk = 25', 'minSdk = 22'))
-          print('Patched minSdk to 22 (Fire OS 5); build success does not guarantee runtime compatibility.')
+          p = Path("app/build.gradle.kts")
+          t = p.read_text()
+          assert "minSdk = 25" in t, "Upstream min SDK configuration changed"
+          p.write_text(t.replace("minSdk = 25", "minSdk = 22"))
+          print("Using Android API 22 minimum; runtime compatibility NOT confirmed")
           PY
-      - name: Build actual receiver
+      - name: Build iMirror receiver (experimental)
         working-directory: receiver
-        run: bash ./gradlew assembleDebug --no-daemon --stacktrace
-      - uses: actions/upload-artifact@v4
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
         with:
           name: nova-airplay-experimental-receiver-apks
           path: receiver/app/build/outputs/apk/**/*.apk
