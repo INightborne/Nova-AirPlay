@@ -1,0 +1,47 @@
+name: Experimental iPhone AirPlay receiver for Fire OS 5
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/airplay-port.yml'
+jobs:
+  airplay:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout actual AirPlay receiver source
+        uses: actions/checkout@v4
+        with:
+          repository: prat3ik/iMirror
+          ref: main
+          path: receiver
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install native toolchain
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+      - name: Attempt Fire OS 5 port
+        working-directory: receiver
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          f=Path('app/build.gradle.kts')
+          src=f.read_text()
+          assert 'minSdk = 25' in src
+          f.write_text(src.replace('minSdk = 25', 'minSdk = 22'))
+          print('Patched minSdk to 22 (Fire OS 5); build success does not guarantee runtime compatibility.')
+          PY
+      - name: Build actual receiver
+        working-directory: receiver
+        run: bash ./gradlew assembleDebug --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nova-airplay-experimental-receiver-apks
+          path: receiver/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
